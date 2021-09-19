@@ -738,6 +738,9 @@ int sock_conn_check(struct connection *conn)
 	if ((conn->flags & CO_FL_SOCKS4) && obj_type(conn->target) == OBJ_TYPE_SERVER)
 		addr = &objt_server(conn->target)->socks4_addr;
 
+	if ((conn->flags & CO_FL_PROXY_TUNNEL) && obj_type(conn->target) == OBJ_TYPE_SERVER)
+		addr = &objt_server(conn->target)->proxy_tunnel_addr;
+
 	if (connect(fd, (const struct sockaddr *)addr, get_addr_len(addr)) == -1) {
 		if (errno == EALREADY || errno == EINPROGRESS)
 			goto wait;

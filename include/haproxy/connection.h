@@ -70,6 +70,9 @@ int conn_ctrl_drain(struct connection *conn);
 int conn_send_socks4_proxy_request(struct connection *conn);
 int conn_recv_socks4_proxy_response(struct connection *conn);
 
+/* proxy connect method handshake */
+int conn_send_proxy_tunnel_request(struct connection *conn);
+
 /* If we delayed the mux creation because we were waiting for the handshake, do it now */
 int conn_create_mux(struct connection *conn);
 int conn_notify_mux(struct connection *conn, int old_flags, int forced_wake);

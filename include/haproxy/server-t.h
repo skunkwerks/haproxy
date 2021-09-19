@@ -149,6 +149,7 @@ enum srv_initaddr {
 #define SRV_F_DYNAMIC      0x1000        /* dynamic server instantiated at runtime */
 #define SRV_F_NON_PURGEABLE 0x2000       /* this server cannot be removed at runtime */
 #define SRV_F_DEFSRV_USE_SSL 0x4000      /* default-server uses SSL */
+#define SRV_F_PROXY_TUNNEL 0x8000        /* this server uses a proxy tunnel with CONNECT method */
 
 /* configured server options for send-proxy (server->pp_opts) */
 #define SRV_PP_V1               0x0001   /* proxy protocol version 1 */
@@ -397,9 +398,10 @@ struct server {
 	char adm_st_chg_cause[48];		/* administrative status change's cause */
 
 	/* warning, these structs are huge, keep them at the bottom */
-	struct conn_src conn_src;               /* connection source settings */
-	struct sockaddr_storage addr;           /* the address to connect to, doesn't include the port */
-	struct sockaddr_storage socks4_addr;	/* the address of the SOCKS4 Proxy, including the port */
+	struct conn_src conn_src;                   /* connection source settings */
+	struct sockaddr_storage addr;               /* the address to connect to, doesn't include the port */
+	struct sockaddr_storage socks4_addr;        /* the address of the SOCKS4 Proxy, including the port */
+	struct sockaddr_storage proxy_tunnel_addr;  /* the address of the PROXY tunnel Proxy, including the port */
 
 	EXTRA_COUNTERS(extra_counters);
 };

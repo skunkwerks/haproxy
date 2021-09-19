@@ -41,7 +41,6 @@ struct task *xprt_handshake_io_cb(struct task *t, void *bctx, unsigned int state
 {
 	struct xprt_handshake_ctx *ctx = bctx;
 	struct connection *conn = ctx->conn;
-
 	if (conn->flags & CO_FL_SOCKS4_SEND)
 		if (!conn_send_socks4_proxy_request(conn)) {
 			ctx->xprt->subscribe(conn, ctx->xprt_ctx, SUB_RETRY_SEND,
@@ -56,6 +55,18 @@ struct task *xprt_handshake_io_cb(struct task *t, void *bctx, unsigned int state
 			                     &ctx->wait_event);
 			goto out;
 		}
+
+	if (conn->flags & CO_FL_PROXY_TUNNEL_SEND) {
+		if (!conn_send_proxy_tunnel_request(conn)) {
+			ctx->xprt->subscribe(conn, ctx->xprt_ctx, SUB_RETRY_SEND,
+								 &ctx->wait_event);
+
+			goto out;
+		} else {
+		}
+	}
+
+//    TODO  check flags to send optional headers like keep alive host etc
 
 	if (conn->flags & CO_FL_ACCEPT_CIP)
 		if (!conn_recv_netscaler_cip(conn, CO_FL_ACCEPT_CIP)) {

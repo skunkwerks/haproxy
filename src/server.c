@@ -1355,6 +1355,39 @@ static int srv_parse_socks4(char **args, int *cur_arg,
 
 	return 0;
 
+	err:
+	free(errmsg);
+	return ERR_ALERT | ERR_FATAL;
+}
+
+/* Parse the "proxy-tunnel" server keyword */
+static int srv_parse_proxy_tunnel(char **args, int *cur_arg,
+								  struct proxy *curproxy, struct server *newsrv, char **err) {
+	char *errmsg;
+	int port_low, port_high;
+	struct sockaddr_storage *sk;
+
+	errmsg = NULL;
+
+	if (!*args[*cur_arg + 1]) {
+		memprintf(err, "'%s' expects <addr>:<port> as argument.\n", args[*cur_arg]);
+		goto err;
+	}
+
+	/* 'sk' is statically allocated (no need to be freed). */
+	sk = str2sa_range(args[*cur_arg + 1], NULL, &port_low, &port_high, NULL, NULL,
+					  &errmsg, NULL, NULL,
+					  PA_O_RESOLVE | PA_O_PORT_OK | PA_O_PORT_MAND | PA_O_STREAM | PA_O_CONNECT);
+	if (!sk) {
+		memprintf(err, "'%s %s' : %s\n", args[*cur_arg], args[*cur_arg + 1], errmsg);
+		goto err;
+	}
+
+	newsrv->flags |= SRV_F_PROXY_TUNNEL;
+	newsrv->proxy_tunnel_addr = *sk;
+
+	return 0;
+
  err:
 	free(errmsg);
 	return ERR_ALERT | ERR_FATAL;
@@ -1782,6 +1815,7 @@ static struct srv_kw_list srv_kws = { "ALL", { }, {
 	{ "pool-max-conn",       srv_parse_pool_max_conn,       1,  1,  1 }, /* Set the max number of orphan idle connections, -1 means unlimited */
 	{ "pool-purge-delay",    srv_parse_pool_purge_delay,    1,  1,  1 }, /* Set the time before we destroy orphan idle connections, defaults to 1s */
 	{ "proto",               srv_parse_proto,               1,  1,  1 }, /* Set the proto to use for all outgoing connections */
+	{ "proxy-tunnel",        srv_parse_proxy_tunnel,        1,  1,  0 }, /* Set the proxy tunnel backend of the server*/
 	{ "proxy-v2-options",    srv_parse_proxy_v2_options,    1,  1,  1 }, /* options for send-proxy-v2 */
 	{ "redir",               srv_parse_redir,               1,  1,  0 }, /* Enable redirection mode */
 	{ "resolve-net",         srv_parse_resolve_net,         1,  1,  0 }, /* Set the preferred network range for name resolution */
@@ -2281,6 +2315,7 @@ void srv_settings_cpy(struct server *srv, const struct server *src, int srv_tmpl
 
 	srv->check.via_socks4         = src->check.via_socks4;
 	srv->socks4_addr              = src->socks4_addr;
+    srv->proxy_tunnel_addr        = src->proxy_tunnel_addr;
 }
 
 /* allocate a server and attach it to the global servers_list. Returns

@@ -128,7 +128,6 @@ enum {
 
 	/* unused : 0x00000010 */
 	/* unused : 0x00000020 */
-	/* unused : 0x00000040, 0x00000080 */
 
 	/* These flags indicate whether the Control and Transport layers are initialized */
 	CO_FL_CTRL_READY    = 0x00000100, /* FD was registered, fd_delete() needed */
@@ -172,8 +171,12 @@ enum {
 	CO_FL_ACCEPT_PROXY  = 0x02000000,  /* receive a valid PROXY protocol header */
 	CO_FL_ACCEPT_CIP    = 0x04000000,  /* receive a valid NetScaler Client IP header */
 
+	/*  STOLEN unused : 0x00000040, 0x00000080 */
+	CO_FL_PROXY_TUNNEL_SEND	= 0x00000040,  /* handshaking with upstream proxy, going to send the handshake */
+	CO_FL_PROXY_TUNNEL_RECV = 0x00000080,  /* handshaking with upstream proxy, going to check if handshake succeed */
+
 	/* below we have all handshake flags grouped into one */
-	CO_FL_HANDSHAKE     = CO_FL_SEND_PROXY | CO_FL_ACCEPT_PROXY | CO_FL_ACCEPT_CIP | CO_FL_SOCKS4_SEND | CO_FL_SOCKS4_RECV,
+	CO_FL_HANDSHAKE     = CO_FL_SEND_PROXY | CO_FL_ACCEPT_PROXY | CO_FL_ACCEPT_CIP | CO_FL_SOCKS4_SEND | CO_FL_SOCKS4_RECV | CO_FL_PROXY_TUNNEL_SEND ,
 	CO_FL_WAIT_XPRT     = CO_FL_WAIT_L4_CONN | CO_FL_HANDSHAKE | CO_FL_WAIT_L6_CONN,
 
 	CO_FL_SSL_WAIT_HS   = 0x08000000,  /* wait for an SSL handshake to complete */
@@ -195,6 +198,11 @@ enum {
 
 	/* below we have all SOCKS handshake flags grouped into one */
 	CO_FL_SOCKS4        = CO_FL_SOCKS4_SEND | CO_FL_SOCKS4_RECV,
+
+	/* below we have all proxy tunnel handshake flags grouped into one */
+	CO_FL_PROXY_TUNNEL        = CO_FL_PROXY_TUNNEL_SEND | CO_FL_PROXY_TUNNEL_RECV,
+
+
 };
 
 /* Possible connection error codes.
@@ -252,8 +260,8 @@ enum {
 	CO_ER_SOCKS4_RECV,       /* SOCKS4 Proxy read error during handshake */
 	CO_ER_SOCKS4_DENY,       /* SOCKS4 Proxy deny the request */
 	CO_ER_SOCKS4_ABORT,      /* SOCKS4 Proxy handshake aborted by server */
-
 	CO_ERR_SSL_FATAL,        /* SSL fatal error during a SSL_read or SSL_write */
+	CO_ER_PROXY_CONNECT_SEND, /* SOCKS4 Proxy write error during handshake */
 };
 
 /* error return codes for accept_conn() */
@@ -539,7 +547,7 @@ struct connection {
 	/* first cache line */
 	enum obj_type obj_type;       /* differentiates connection from applet context */
 	unsigned char err_code;       /* CO_ER_* */
-	signed short send_proxy_ofs;  /* <0 = offset to (re)send from the end, >0 = send all (reused for SOCKS4) */
+	signed short send_proxy_ofs;  /* <0 = offset to (re)send from the end, >0 = send all (reused for SOCKS4 and proxy tunnel) */
 	unsigned int flags;           /* CO_FL_* */
 	const struct protocol *ctrl;  /* operations at the socket layer */
 	const struct xprt_ops *xprt;  /* operations at the transport layer */

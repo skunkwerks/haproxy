@@ -32,6 +32,7 @@
 #include <haproxy/xxhash.h>
 
 
+
 DECLARE_POOL(pool_head_connection,     "connection",     sizeof(struct connection));
 DECLARE_POOL(pool_head_connstream,     "conn_stream",    sizeof(struct conn_stream));
 DECLARE_POOL(pool_head_conn_hash_node, "conn_hash_node", sizeof(struct conn_hash_node));
@@ -1409,7 +1410,6 @@ int conn_recv_netscaler_cip(struct connection *conn, int flag)
 int conn_send_socks4_proxy_request(struct connection *conn)
 {
 	struct socks4_request req_line;
-
 	if (!conn_ctrl_ready(conn))
 		goto out_error;
 
@@ -1603,6 +1603,87 @@ int conn_recv_socks4_proxy_response(struct connection *conn)
 	return 0;
 }
 
+
+int conn_send_proxy_tunnel_request(struct connection *conn) {
+	char addr[256];
+	int getaddr;
+	char proxy_connect[512]; // fqdn + port (connect string) + headers
+	int connect_length;
+	if (!conn_ctrl_ready(conn))
+		goto out_error;
+
+	if (!conn_get_dst(conn))
+		goto out_error;
+
+	getaddr = addr_to_str(conn->dst, addr, sizeof(addr));
+
+	connect_length = snprintf(proxy_connect, sizeof(proxy_connect), "CONNECT %s:%u HTTP/1.1\r\n\r\n",
+							  addr,
+							  ntohs(get_net_port(conn->dst)));
+
+	if (conn->send_proxy_ofs > 0) {
+		/*
+		 * This is the first call to send the request
+		 */
+		conn->send_proxy_ofs = -(int) connect_length;
+	}
+	if (conn->send_proxy_ofs < 0) {
+		int ret = 0;
+
+		/* we are sending the htt-connect req_line here. If the data layer
+		 * has a pending write, we'll also set MSG_MORE.
+		 */
+		ret = conn_ctrl_send(
+				conn,
+				((char *) (proxy_connect)),
+				-conn->send_proxy_ofs,
+				(conn->subs && conn->subs->events & SUB_RETRY_SEND) ? CO_SFL_MSG_MORE : 0);
+
+		DPRINTF(stderr, "HTTP TUNNEL HS FD[%04X]: Before send remain is [%d], sent [%d]\n",
+				conn->handle.fd, -conn->send_proxy_ofs, ret);
+
+		if (ret < 0) {
+			goto out_error;
+		}
+
+		conn->send_proxy_ofs += ret; /* becomes zero once complete */
+		if (conn->send_proxy_ofs != 0) {
+			goto out_wait;
+		}
+	}
+
+	/* OK we've the whole request sent */
+	conn->flags &= ~CO_FL_PROXY_TUNNEL_SEND;
+
+
+	/* The connection is ready now, simply return and let the connection
+	 * handler notify upper layers if needed.
+	 */
+	conn->flags &= ~CO_FL_WAIT_L4_CONN;
+
+//        This is for the proxy header so don't change
+	if (conn->flags & CO_FL_SEND_PROXY) {
+		/*
+		 * Get the send_proxy_ofs ready for the send_proxy due to we are
+		 * reusing the "send_proxy_ofs", and SOCKS4 handshake should be done
+		 * before sending PROXY Protocol.
+		 */
+		conn->send_proxy_ofs = 1;
+	}
+	return 1;
+
+	out_error:
+	/* Write error on the file descriptor */
+	conn->flags |= CO_FL_ERROR;
+	if (conn->err_code == CO_ER_NONE) {
+		conn->err_code = CO_ER_PROXY_CONNECT_SEND;
+	}
+	return 0;
+
+	out_wait:
+	return 0;
+}
+
 /* Lists the known proto mux on <out> */
 void list_mux_proto(FILE *out)
 {
@@ -1648,6 +1729,23 @@ void list_mux_proto(FILE *out)
 			(proto.len ? proto.ptr : "<default>"), mode, side, item->mux->name,
 			(int)b_data(chk), b_orig(chk));
 	}
+}
+
+/* Note: <remote> is explicitly allowed to be NULL */
+int make_proxy_line(char *buf, int buf_len, struct server *srv, struct connection *remote, struct stream *strm)
+{
+	int ret = 0;
+	if (srv && (srv->pp_opts & SRV_PP_V2)) {
+		ret = make_proxy_line_v2(buf, buf_len, srv, remote, strm);
+	}
+	else {
+		if (remote && conn_get_src(remote) && conn_get_dst(remote))
+			ret = make_proxy_line_v1(buf, buf_len, remote->src, remote->dst);
+		else
+			ret = make_proxy_line_v1(buf, buf_len, NULL, NULL);
+	}
+
+	return ret;
 }
 
 /* Makes a PROXY protocol line from the two addresses. The output is sent to
